@@ -1,0 +1,503 @@
+*deblog.txt*    For Vim version 7                    Last change: 2010 Jan 16
+
+
+                DEBLOG MANUAL                   by Rune Heggtveit
+
+
+Log data and messages to log file and Vim.          *deblog*
+
+Provided "as is", without warranty of any kind, express or implied.
+
+
+    1.  Introduction .............. |deblog-intro|
+    2.  Implementing .............. |deblog-implement|
+    3.  Configuration ............. |deblog-config|
+        1. Pre configuration ...... |deblog-pre-config|
+        2. Runtime configuration .. |deblog-run-config|
+    4.  Basic usage ............... |deblog-basic|
+    5.  Commands .................. |deblog-commands|
+    6.  Functions ................. |deblog-functions|
+    7.  Notes ..................... |deblog-notes|
+    8.  History ................... |deblog-history|
+
+==============================================================================
+    1.  Introduction                                *deblog-intro*
+
+    Deblog is intended as a help to be used when writing and debugging Vim 
+scripts. Provides log functionality to file, and as Vim messages. Multiple
+instances can be used in same script. Log file can be viewed in external
+application or in Vim window. Head and tail from log file can be viewed as Vim
+messages.
+    Deblog is not written with|autoload|in mind, but rather to be used with
+the command|:source|from within the script that are being worked on. There are
+however nothing that prevents one from having it in autoload. It is nor 
+intended to be part of other production scripts, but feel free to do what ever
+you like. Mainly used with tail -f in xterm.
+
+Global variables:
+    g:Deblog_public_name  - Name to deblog resource. Defaul g:Deblog
+    g:Deblog_force_cmd    - Replace existing user commands. Default 1
+    ( See  |deblog-config| )
+
+Global functions:
+    g:Deblog_new()        - Create new Deblog instance. Require unique
+                            g:Deblog_public_name else old one is replaced.
+    ( See  |deblog-basic| , |deblog_new| )
+
+==============================================================================
+    2.  Implementing                                *deblog-implement*
+
+Example:
+    Given the path structure:
+        ~/.vim/dev/deblog/deblog.vim
+        ~/.vim/dev/test/test.vim
+
+    To add |deblog| to test.vim, use i.e.: >
+        exe 'source <sfile>:h/../deblog/deblog.vim'
+<
+    This will create an instance of Deblog with default settings accessible by
+g:Deblog.{function}. (See |deblog-functions|.) Alternatively add configuration
+options on lines preceding the|:source|command. See |deblog-config|.
+    Several instances can be created. Each require a unique name. Default is
+g:Deblog. See |deblog-public-name|, |deblog-basic|.
+
+==============================================================================
+    3.  Configuration                               *deblog-config*
+
+    All global variables are optional. Tho, use of multiple Deblog instances,
+requires a unique name for each.
+                                                    *deblog-global*
+    There are two "static" global-, non instance-, variables; 
+namely |g:Deblog_public_name| and |g:Deblog_force_cmd|. The rest is dependent 
+on |g:Deblog_public_name|. I.e. if public name is Xar, then global option 
+identifier |deblog-htime|for Xar is g:Xar_htime.
+    All instance settings can be changed during runtime, but then directly on
+the instance object. I.e. let g:Xar.htime = 1.5 (Notice underscore/dot
+difference.)
+
+------------------------------------------------------------------------------
+    3.1 Pre Configuration                           *deblog-pre-config*
+    
+    Pre configuration means all configuration setting that are set before
+Deblog is sourced or g:Deblog_new() is called. All instance specific variables
+can be changed during runtime, but then directly on the instance object.
+
+- Static ---------------------------------------------------------------------
+   *g:Deblog_public_name*                           *deblog-public-name*
+        - Default    : g:Deblog
+        - Description: A string literal of the global name used for the Deblog
+                       instance. This name is used to access Deblog functions.
+                       It is also base for other configuration options.
+        - Important  : When using multiple instances.
+        - Example    : using default and custom in same file >
+        exe 'source <sfile>:h/../deblog/deblog.vim'
+        
+        let g:Deblog_public_name = 'g:Xar'
+        let g:Xar_file = 'xar.log'
+        call g:Deblog_new()
+        " Alternatively: exe 'source <sfile>:h/../deblog/deblog.vim'
+        call g:Xar.spew('This is fun')
+        call g:Deblog.spew('This is sad')
+<       - Result     : "This is fun" is logged to the file xar.log, and "This
+                       is sad" is logged to default file.
+
+    *g:Deblog_force_cmd*                            *deblog-force-cmd*
+        - Default    : 1
+        - Description: Deblog check if |user-commands|exists and only replace 
+                       if |g:Deblog_force_cmd| has value 1. A local
+                      |Dictionary|is created on first source of deblog.vim and
+                       will not be updated unless|deblog-purge-all|is 
+                       executed.
+        - See also   : |deblog-commands|.
+
+ - Instance ------------------------------------------------------------------
+    *g:Deblog_deblog*                               *deblog-deblog*
+        {|g:Deblog_public_name|}_deblog     i.e. g:Xar_deblog
+
+        - Default    : fiwh
+        - Description: Specify which |deblog-functions| are active. Inactive 
+                       functions can be forced on call.
+                        f:  Write to log file,       |deblog-spew|
+                        i:  Show info messages,      |deblog-info|
+                        w:  Show warning messages,   |deblog-warning|
+                        h:  Show highlight messages, |deblog-hmsg|
+          
+    *g:Deblog_file*                                 *deblog-file*
+        {|g:Deblog_public_name|}_file       i.e. g:Xar_file
+
+        - Default    : win:   |$HOME|/my_deblog.log
+                       others:|$HOME| /.vim/my_deblog.log
+        - Description: File where spew(msg) messages are written. If file
+                       exist it is appended to, else it is created. If it
+                       is empty '', no file is written.
+    
+    *g:Deblog_htime*                                *deblog-htime*
+        {|g:Deblog_public_name|}_htime      i.e. g:Xar_htime
+
+        - Default    : If Vim has |reltime()| 0.5, else 1
+        - Description:|Float|specifying time limit between headers in log
+                       file. If time since last write to log file exceed this
+                       value a header is added to log file. If value is 0 
+                       header is always written. If negative, < 0, header is
+                       never written.
+        - Note       : Deblog uses|reltime()|by default to handle time. If Vim
+                       does not have |reltime()| then|localtime()|is used. If
+                       no reltime, htime is also rounded up to nearest int.
+                       I.e. 0.3 -> 1
+        - See also   : |deblog-timestamp|, |deblog-separator|, |deblog-spew|
+
+    *g:Deblog_timestamp*                            *deblog-timestamp*
+        {|g:Deblog_public_name|}_timestamp  i.e. g:Xar_htime
+        
+        - Default    : 1
+        - Description: If 1 then use timestamp in log file header. Else use
+                       separator.
+        - See also   : |deblog-htime|, |deblog-separator|, |deblog-spew|
+
+    *g:Deblog_separator*                            *deblog-separator*
+        {|g:Deblog_public_name|}_separator  i.e. g:Xar_separator
+        
+        - Default    : ';; - - - - - - - - ' ...
+        - Description: If |deblog-timestamp|is 0 use this as header in log 
+                       file.
+        - See also   : |deblog-htime|, |deblog-timestamp|, |deblog-spew|
+
+    *g:Deblog_cmd_shell*                            *deblog-cmd-shell*
+        {|g:Deblog_public_name|}_cmd_shell  i.e. g:Xar_cmd_shell
+        
+        - Default    : uxterm -fa "Liberation Mono" -fs 7 -fg black -fg ivory
+                              -geometry 50x70-0+0 +sb -sl 500
+                              -T "VDL #FILE#" -e "tail -f #FILE#" &
+        - Description: Command to open log file. Can be shell, as default or
+                       what ever else. The string #FILE# is replaced with 
+                      |deblog-file|of current Deblog instance and then
+                       executed with |:!|.
+
+    *g:Deblog_aushell_1*                            *deblog-aushell-1*
+        {|g:Deblog_public_name|}_aushell_1  i.e. g:Xar_aushell_1
+       
+       - Default    : 0
+        - Description: If 1 then |deblog-cmd-shell|is executed upon instance
+                       initiation.
+        - Note       : Can be changed, but has no effect after initialization.
+
+    *g:Deblog_cmd_split*                            *deblog-cmd-split*
+        {|g:Deblog_public_name|}_cmd_split  i.e. g:Xar_cmd_split
+        - Default    : bo 40vs | call self.lopen() | wincmd p
+        - Description: Command used to open log file in Vim.
+        - See also   : |deblog-sopen|
+
+------------------------------------------------------------------------------
+    3.2 Runtime Configuration                       *deblog-run-config*
+
+    Configuration options can be changed during runtime with |:let|, using the
+|deblog-public-name|. I.e. if public name is g:Xar one would do: >
+    let g:Xar.htime = 1.5
+    let g:Xar.timestamp = 1
+    ...
+<
+   |deblog-deblog|can also be set by the |user-command| |deblog-level|.
+
+    List of configuration settings, using g:Xar as example:
+        g:Xar.deblog        |deblog-deblog|
+        g:Xar.file          |deblog-file|
+        g:Xar.htime         |deblog-htime|
+        g:Xar.timestamp     |deblog-timestamp|
+        g:Xar.separator     |deblog-separator|
+        g:Xar.cmd_shell     |deblog-cmd-shell|
+        g:Xar.cmd_split     |deblog-cmd-split|
+
+    Note: If changing .file it is recommended to call|deblog-filecheck()| 
+afterwards.
+
+==============================================================================
+    4.  Basic usage                                 *deblog-basic*
+
+    Some very simple examples to give a hint on how to use Deblog.
+    All examples are given with the imagined file structure:
+        ~/.vim/dev/deblog/deblog.vim
+        ~/.vim/dev/test/file_to_be_using_deblog.vim
+
+..............................................................................
+A. Example: plain >
+    exe 'source <sfile>:h/../deblog/deblog.vim'
+    call g:Deblog.spew('Hello!')
+<
+    Result: "Hello!" are written to default log file. (see |deblog-file|)
+
+Enter command :DeblogShell to open log file in shell.
+Enter command :DeblogSopen to open log file in Vim split.
+
+..............................................................................
+B. Example: custom|deblog-public-name| and |deblog-file| >
+    let g:Deblog_public_name = 'g:Zulu'
+    let g:Zulu_file = $HOME/something.log
+    exe 'source <sfile>:h/../deblog/deblog.vim'
+    call g:Zulu.spew('snooze')
+    call g:Zulu.warning('wake up')
+<
+    Result: "snooze" are written to the file $HOME/something.log and the
+message "wake up" is displayed in Vim.
+
+Enter command :DeblogShell to open log file in shell.
+Enter command :DeblogSopen to open log file in Vim split.
+
+Enter command :DeblogLevel -f to deny write to file, enter: >
+    :call g:Zulu.spew('awake')
+<
+    Result: Since g:Zulu.deblog now is 'iwh' and not has 'f' nothing is
+written to file (see |deblog-deblog|). Enter: >
+    :call g:Zulu.spew('awake', 1)
+<
+    Result: Missing 'f' is overridden by 1.
+
+..............................................................................
+C. Example: using default and custom in same file >
+    exe 'source <sfile>:h/../deblog/deblog.vim'
+    
+    let g:Deblog_public_name = 'g:Xar'
+    let g:Xar_file = 'xar.log'
+    call g:Deblog_new()
+    " Alternatively: exe 'source <sfile>:h/../deblog/deblog.vim'
+    call g:Xar.spew('This is fun')
+    call g:Deblog.spew('This is sad')
+<   
+    Result: "This is fun" is logged to the file xar.log, and "This is sad" 
+is logged to default file.
+
+Enter command :DeblogShell 1 to open log file for g:Deblog
+Enter command :DeblogShell 2 to open log file for g:Xar
+Enter command :DeblogAbout 2 to view configuration etc. for g:Xar
+
+
+==============================================================================
+    5.  Commands                                    *deblog-commands*
+
+    All commands support auto complete on {ins}. Names are displayed with 
+numbers. To specify {ins} use either number, number(name) or name.
+    I.e., say you have initiated three Deblog instances first g:Deblog then
+g:Xar and last g:Zulu. To open shell for g:Xar execute 
+
+    :DeblogShell 2
+    or
+    :DeblogShell 2(g:Xar)
+    or
+    :DeblogShell g:Xar
+    or
+    :DeblogShell
+
+    Last one gives a list of items to choose from.
+
+DeblogShell [{ins}]                                 *DeblogShell*
+    Execute|deblog-cmd_shell|for {ins}. 
+    Do not specify {ins} if only one instance.
+    
+DT [{ins}] [{n}]                                    *DT*
+    Echo {n} lines from end of|deblog-file|.
+    {n} defaults to 10.
+    Do not specify {ins} if only one instance.
+
+DeblogHead [{ins}] [{n}]                            *DeblogHead*
+    Echo {n} lines from start of|deblog-file|.
+    {n} defaults to 10.
+    Do not specify {ins} if only one instance.
+
+DeblogLevel [{ins}] [{level}]                       *DeblogLevel*
+    Set|deblog-deblog|to {level} for {ins}
+    Use + to add to current.
+    Use - to remove from current.
+    Examples:
+        level='fw', DeblogLevel fiw,  new level='fiw'
+        level='fw', DeblogLevel +i,   new level='fwi'
+        level='fw', DeblogLevel -i,   new level='fw'
+        level='fw', DeblogLevel -w,   new level='f'
+        level='fw', DeblogLevel +f+i, new level='fwi'
+        level='fw', DeblogLevel f+i,  new level='fi'
+
+DeblogLopen [{ins}]                                 *DeblogLopen*
+    Open|deblog-file|in current window (if not already open). Buffer is
+    automatically updated when visible.
+
+    NOTE: If log file is edited and saved within Vim, shell tail stop update.
+
+DeblogSopen [{ins}]                                 *DeblogSopen*
+    Open|deblog-file|in window (if not already open) according to
+   |deblog-cmd-split|.
+    Buffer is automatically updated when visible.
+
+    NOTE: If log file is edited and saved within Vim, shell tail stop update.
+
+DeblogAbout [{ins}]                                 *DeblogAbout*
+    Echo information about {ins}
+
+DeblogErase                                         *DeblogErase*
+    Remove all|user-commands|, delete all Deblog instances and remove all
+    global variables.
+
+
+==============================================================================
+    6.  Functions                                   *deblog-functions*
+
+This is most of the functions from deblog.vim. 
+
+spew(), warning() and info() are the ones most frequently used.
+new() is used to initiate new instance.
+
+The functions from tail() and down are mostly functions used by|user-commands|
+or internally in other ways.
+
+There is one global function, |deblog_new()|. The rest is accessible trough
+Deblog instances / objects. I.e. call g:Xar.spew('foo')
+
+g:Deblog_new()                                       *deblog_new()*
+    Creates a new Deblog instance using |deblog-public-name| as base.
+    Instead of calling g:Deblog_new on could also source deblog.vim for each
+    time one want to initiate a new. Deblog will call g:Deblog_new() and
+    finish if it has already been sourced once.
+
+    Usage: g:Deblog_new()
+
+______________________________________________________________________________
+
+spew({msg} [, {force}])                             *deblog-spew()*
+    Write {msg} to |deblog-file| if|deblog-deblog|have the flag 'f'.
+    If {force} is 1, flag is ignored.
+    
+    Usage: {|deblog-public-name|}.spew()
+
+    See also: |deblog-htime|, |deblog-timestamp|, |deblog-separator|
+
+warning({msg} [, {force}])                          *deblog-warning()*
+    Echo {msg} in Vim if|deblog-deblog|have the flag 'w'.
+    Using |:echohl||WarningMsg|
+    If {force} is 1, flag is ignored.
+    
+    Usage: {|deblog-public-name|}.warning()
+
+info({msg} [, {force}])                             *deblog-info()*
+    Echo {msg} in Vim if|deblog-deblog|have the flag 'i'.
+    Using |:echohl||Comment|
+    If {force} is 1, flag is ignored.
+    
+    Usage: {|deblog-public-name|}.info()
+
+hmsg({msg}, {hl} [, {force}])                       *deblog-hmsg()*
+    Echo {msg} in Vim if|deblog-deblog|have the flag 'h'.
+    Highlight with {hl}.
+    If {force} is 1, flag is ignored.
+
+    Usage: {|deblog-public-name|}.hmsg()
+
+______________________________________________________________________________
+
+tail([{n}])                                         *deblog-tail()*
+    Echo {n} lines from end of |deblog-file|
+    Defaults to 10 lines.
+
+    Usage: {|deblog-public-name|}.tail()
+    See also: |DeblogTail|
+
+head([{n}])                                         *deblog-head()*
+    Echo {n} lines from start of |deblog-file|
+    Defaults to 10 lines.
+    
+    Usage: {|deblog-public-name|}.tail()
+    See also: |DeblogHead|
+
+shell()                                             *deblog-shell()*
+    Execute |deblog-cmd-shell|with |deblog-file|
+
+    Usage: {|deblog-public-name|}.tail()
+    See also: |DeblogShell|
+
+haslogwin({focus})                                  *deblog-haslogwin()*
+    Check if |deblog-file|is open in any window with specific settings in
+    Vim. If visible and {focus} is 1, set focus.
+
+    Usage: {|deblog-public-name|}.haslogwin()
+    See also: |DeblogSopen|, |DeblogLopen|
+
+lopen()                                             *deblog-lopen()*
+    If |deblog-file| is not open in any other window, open in current, else
+    set focus to window with log file. Updates file and set local settings to
+    buffer.
+
+    Usage: {|deblog-public-name|}.lopen()
+    See also: |DeblogSopen|, |DeblogLopen|
+
+sopen()                                             *deblog-sopen()*
+    If|deblog-file|is not open in any window, with specific settings, execute
+   |deblog-cmd-split|.
+
+    Usage: {|deblog-public-name|}.sopen()
+    See also: |DeblogSopen|, |DeblogLopen|
+
+freshlog()                                          *deblog-freshlog()*
+    If |deblog-file|has been opened from Deblog and is visible, update. Called
+    by |deblog-spew|
+
+    Usage: {|deblog-public-name|}.freshlog()
+    See also: |DeblogSopen|, |DeblogLopen|
+
+about()                                             *deblog-about()*
+    Echo information about Deblog instance.
+
+    Usage: {|deblog-public-name|}.about()
+    See also: |DeblogAbout|
+
+setlevel({level})                                   *deblog-setlevel()*
+    Set|deblog-deblog|according to {level}. Validates before setting.
+
+    Usage: {|deblog-public-name|}.setlevel()
+    See also: |DeblogLevel|
+
+filecheck()                                         *deblog-filecheck()*
+    Validates |deblog-file|. If validation fails |deblog-deblog|flag 'f' is
+    removed
+
+    Usage: {|deblog-public-name|}.filecheck()
+
+init()                                              *deblog-init()*
+    Initiates instance of Deblog. All global settings are checked and a new
+    variable by name |deblog-public-name|created.
+
+    Usage: {|deblog-public-name|}.init()
+
+purge_all()                                         *deblog-purge-all()*
+                                                    *deblog-purge_all()*
+    Remove all |user-commands|, delete all Deblog instances and remove all
+    global variables. Can be useful if you i.e. modify the deblog.vim file or
+    for other reasons want to remove current instances. 
+
+    Usage: Internally in deblog.vim by s:Deblog_purge_all(), or by user
+           command.
+
+    Note : deblog.vim need to be |:source|d again after this command is
+           issued if one want to initiate new.
+
+    See also: |DeblogEarse| user command.
+
+==============================================================================
+    7.  Notes                                       *deblog-notes*
+
+    Edit and save of log file in Vim result in shell tail to stop update.
+
+
+==============================================================================
+    8.  History                                       *deblog-history*
+
+    ????-??-??          Initial script that grew, and grew, and then grew some
+                        more.
+    2011-01-12          Clean up code and doc
+    2011-01-29          Added support for|localtime()|
+
+------------------------------------------------------------------------------
+
+                                  .   .  .      
+                                 _| _ |_ | _  _ 
+                                (_](/,[_)|(_)(_]
+                                             ._|
+
+::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
+
+" vim:tw=78:wrap:ai:ft=help:norl:

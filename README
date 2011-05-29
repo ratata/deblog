@@ -1,0 +1,49 @@
+==============================================================================
+
+			     Deblog - a Vim Script
+
+==============================================================================
+
+A simple way to log messages to file and or Vim, from Vim.
+
+Put doc/deblog.txt in your Vim doc directory and update help tags with i.e.
+:helptags ~/.vim/doc
+
+Then do
+:help deblog
+
+..............................................................................
+Short example:
+
+Log files.
+
+Note:
+    Default log file is
+        Windows: $HOME/my_deblog.log
+        Other:   $HOME/.vim/my_deblog.log
+
+I.e:
+...
+source deblog.vim
+
+for i in range(0,5)
+    call g:Deblog.spew('i is now: ' . i)
+endfor
+
+call g:Deblog.info('fine!')
+
+...
+
+Text appended to log file.
+Message displayed in Vim.
+
+Open log file with 
+	:DeblogShell 	for i.e. external shell tail
+	:DeblogSopen 	for split view in Vim with update
+	:DT		to view tail of log file in Vim
+
+	and so on ...
+
+
+Further information see deblog.txt and deblog.vim
+
